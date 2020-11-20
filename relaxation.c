@@ -6,7 +6,10 @@
 typedef struct args {
     double **current;
     double **previous;
-    int dimension;
+    int startrow;
+    int endrow;
+    int startcol;
+    int endcol;
     double precision;
 } ARGS;
 
@@ -32,57 +35,71 @@ void printSquare(double **square, int dimension) {
 }
 
 void *solve(void *args) {
-    //Coerse void pointer to ARGS pointer
+    // Cast void pointer to ARGS pointer
     ARGS *targs = args;
+    // Put the fields of the args struct to seperate variables for easier use
     double **current = targs->current;
     double **previous = targs->previous;
-    int dimension = targs->dimension;
+    int startrow = targs->startrow;
+    int endrow = targs->endrow;
+    int startcol = targs->startcol;
+    int endcol = targs->endcol;
     double precision = targs->precision;
 
-    bool success = false;
-    while (success == false) {
-        // Success starts of as true and if one element does not meet the
-        // precision goes to false
-        success = true;
-        for (int i = 1; i < dimension - 1; i++) {
-            for (int j = 1; j < dimension - 1; j++) {
-                current[i][j] = (previous[i][j - 1] + previous[i - 1][j] +
-                                 previous[i][j + 1] + previous[i + 1][j]) /
-                                4;
-                if (current[i][j] - previous[i][j] <= precision)
-                    success = success && true;
-                else
-                    success = success && false;
-            }
+    for (int i = startrow; i < endrow; i++) {
+        for (int j = startcol; j < endcol; j++) {
+            current[i][j] = (previous[i][j - 1] + previous[i - 1][j] +
+                             previous[i][j + 1] + previous[i + 1][j]) /
+                            4;
         }
-        double **temp = previous;
-        previous = current;
-        current = temp;
     }
+    // Wait for all threads to end computation so that the array current is
+    // full, then check if its below the precision, if yes then exit else swap
+    // and continue the same thread
+
+    // double **temp = previous;
+    //     previous = current;
+    //     current = temp;
     return NULL;
 }
 
 int relaxation(int dimension, int pthreads, double precision) {
-    //Initialize the two arrays
+    // Initialize the two arrays
     double **current;
     double **previous;
     initSquare(&current, dimension);
     initSquare(&previous, dimension);
 
-    //Thread Creation
-    pthread_t tid;
-    ARGS args = {current, previous, dimension, precision};
-    pthread_create(&tid, NULL, solve, &args);
-    pthread_join(tid,NULL);
-
-    //printSquare(previous, dimension);
+    int calculations = (dimension - 2) * (dimension - 2);
+    if (pthreads >= calculations) {
+        pthread_t tids[calculations];
+        ARGS args[calculations];
+        int c = 0;
+        for (int i = 1; i < dimension - 1; i++) {
+            for (int j = 1; j < dimension - 1; j++) {
+                args[c].current = current;
+                args[c].previous = previous;
+                args[c].startrow = i;
+                args[c].endrow = i + 1;
+                args[c].startcol = j;
+                args[c].endcol = j + 1;
+                args[c].precision = precision;
+                pthread_create(&tids[i], NULL, solve, &args[c]);
+                c++;
+            }
+        }
+        for (int i = 0; i < calculations; i++) {
+            pthread_join(tids[i], NULL);
+        }
+    } else if (pthreads % calculations == 0) {
+    }
+    printSquare(current,dimension);
     return 0;
 }
 
 int main() {
     // Prompt User for dimension of their array
-    int dimension = 150;
     // Call relaxation
-    relaxation(dimension, 2, 0.000001);
+    relaxation(4, 4, 0.000001);
     return 0;
 }
