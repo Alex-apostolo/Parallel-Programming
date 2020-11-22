@@ -5,13 +5,14 @@
 // TODO: REMOVE BEFORE UPLOADING
 #include "pthread_barrier.c"
 
+/*Global Variables*/
 pthread_barrier_t barrier;
 pthread_barrier_t barrier1;
-
 bool success = false;
 double **current;
 double **previous;
 
+/*Definitions of Arguments that are passed to each thread*/
 typedef struct args {
     int index;
     int dimension;
@@ -20,6 +21,7 @@ typedef struct args {
     struct CoordNode *coordinates_last;
 } ARGS;
 
+/*Used for Linked List of Threads*/
 struct ThreadNode {
     ARGS *arg;
     struct ThreadNode *next;
@@ -30,11 +32,13 @@ struct Coordinates {
     int j;
 };
 
+/*Used for Linked List of Coordinates*/
 struct CoordNode {
     struct Coordinates tuple;
     struct CoordNode *next;
 };
 
+/*Creates an 2D array of size "dimension*dimension"*/
 void initSquare(double ***square, int dimension) {
     *square = malloc(dimension * sizeof(double *));
     for (int i = 0; i < dimension; i++) {
@@ -56,6 +60,7 @@ void printSquare(double **square, int dimension) {
     printf("\n");
 }
 
+/*This method is called when a thread gets created*/
 void *solve(void *args) {
     // Casts void pointer to ARGS pointer
     ARGS *targs = args;
@@ -72,6 +77,8 @@ void *solve(void *args) {
         while (temp != NULL) {
             i = temp->tuple.i;
             j = temp->tuple.j;
+            // No need to lock here since each thread changes different values
+            // inside the array
             current[i][j] = (previous[i][j - 1] + previous[i - 1][j] +
                              previous[i][j + 1] + previous[i + 1][j]) /
                             4;
@@ -80,8 +87,10 @@ void *solve(void *args) {
 
         pthread_barrier_wait(&barrier);
 
-        // No need to lock since only the first thread is responsible for changing the success values
+        // No need to lock here either since only the first thread is
+        // responsible for changing the success values
         if (index == 0) {
+            // Checks if each value of the calculated array is below precision
             success = true;
             for (i = 1; i < dimension - 1; i++) {
                 for (j = 1; j < dimension - 1; j++) {
@@ -92,6 +101,7 @@ void *solve(void *args) {
                 }
             }
 
+            // Swap previous and current
             double **temp1 = previous;
             previous = current;
             current = temp1;
@@ -107,6 +117,7 @@ int relaxation(int dimension, int pthreads, double precision) {
     initSquare(&current, dimension);
     initSquare(&previous, dimension);
 
+    // reps is the number of threads the program would create
     int reps;
     if (pthreads < (dimension - 2) * (dimension - 2))
         reps = pthreads;
@@ -117,9 +128,8 @@ int relaxation(int dimension, int pthreads, double precision) {
     struct ThreadNode *first;
     struct ThreadNode *last;
     for (int i = 0; i < reps; i++) {
-        // Allocate memory for the fields of the ThreadNode
         struct ThreadNode *temp = malloc(sizeof(struct ThreadNode));
-        // Initializes args
+
         ARGS *arg = malloc(sizeof(ARGS));
         arg->dimension = dimension;
         arg->precision = precision;
@@ -133,53 +143,64 @@ int relaxation(int dimension, int pthreads, double precision) {
             first = temp;
             last = first;
         } else {
-            // Traverse to the right of the linked list
             last->next = temp;
             last = temp;
         }
     }
-    // Makes the linked list circular
-    last->next = first;
+    last->next = first; // Makes the linked list circular
 
     // Traverse the "current" matrix and assign the coordinates to threads in a
     // circular fashion
-    struct ThreadNode *temp = first;
+    struct ThreadNode *current = first;
     for (int i = 1; i < dimension - 1; i++) {
         for (int j = 1; j < dimension - 1; j++) {
-            struct Coordinates *coordinates =
-                malloc(sizeof(struct Coordinates));
-            coordinates->i = i;
-            coordinates->j = j;
+            struct Coordinates *ctemp = malloc(sizeof(struct Coordinates));
+            ctemp->i = i;
+            ctemp->j = j;
 
-            if (temp->arg->coordinates_first == NULL) {
-                temp->arg->coordinates_first = malloc(sizeof(struct CoordNode));
-                temp->arg->coordinates_first->tuple = *coordinates;
-                temp->arg->coordinates_last = temp->arg->coordinates_first;
-            } else {
-                temp->arg->coordinates_last->next =
+            // Appends "ctemp" to Linked List
+            if (current->arg->coordinates_first == NULL) {
+                current->arg->coordinates_first =
                     malloc(sizeof(struct CoordNode));
-                temp->arg->coordinates_last->next->tuple = *coordinates;
-                temp->arg->coordinates_last = temp->arg->coordinates_last->next;
+                current->arg->coordinates_first->tuple = *ctemp;
+                current->arg->coordinates_last =
+                    current->arg->coordinates_first;
+            } else {
+                current->arg->coordinates_last->next =
+                    malloc(sizeof(struct CoordNode));
+                current->arg->coordinates_last->next->tuple = *ctemp;
+                current->arg->coordinates_last =
+                    current->arg->coordinates_last->next;
             }
-            temp = temp->next;
+            current = current->next;
         }
     }
 
     pthread_t tids[reps];
-    pthread_barrier_init(&barrier, NULL, reps);
-    pthread_barrier_init(&barrier1, NULL, reps);
+    if (pthread_barrier_init(&barrier, NULL, reps) != 0) {
+        fprintf(stderr, "\nbarrier init has failed\n");
+        return 1;
+    };
+    if (pthread_barrier_init(&barrier1, NULL, reps) != 0) {
+        fprintf(stderr, "\nbarrier init has failed\n");
+        return 1;
+    };
 
-    //error if it cant create it
-    temp = first;
+    int error;
+    current = first;
     for (int i = 0; i < reps; i++) {
-        pthread_create(&tids[i], NULL, solve, temp->arg);
-        temp = temp->next;
+        error = pthread_create(&tids[i], NULL, solve, current->arg);
+        if (error != 0) {
+            fprintf(stderr, "\nThread with index: \"%d\" could not be created",
+                    i);
+        }
+        current = current->next;
     }
 
-    temp = first;
+    current = first;
     for (int i = 0; i < reps; i++) {
         pthread_join(tids[i], NULL);
-        temp = temp->next;
+        current = current->next;
     }
 
     pthread_barrier_destroy(&barrier);
@@ -188,9 +209,21 @@ int relaxation(int dimension, int pthreads, double precision) {
     return 0;
 }
 
-int main() {
-    // Prompt User for dimension of their array
-    // Call relaxation
-    relaxation(7, 8, 0.002);
+int main(int argc, char *argv[]) {
+    if (argc != 4) {
+        fprintf(stderr,
+                "Error: need to pass 3 arguments - the dimension, the number "
+                "\nof threads and the precision. In that precise order!\n");
+        return -1;
+    }
+    int dimension = atoi(argv[1]);
+    int pthreads = atoi(argv[2]);
+    double precision = atof(argv[3]);
+    if (dimension <= 0 || pthreads <= 0 || precision <= 0.0) {
+        fprintf(stderr, "Error: make sure you entered correct values for "
+                        "dimension, threads and precision\n");
+        return -1;
+    }
+    relaxation(dimension, pthreads, precision);
     return 0;
 }
