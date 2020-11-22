@@ -116,7 +116,6 @@ int relaxation(int dimension, int pthreads, double precision) {
     // Initialize the two global arrays
     initSquare(&current, dimension);
     initSquare(&previous, dimension);
-
     // reps is the number of threads the program would create
     int reps;
     if (pthreads < (dimension - 2) * (dimension - 2))
@@ -205,7 +204,7 @@ int relaxation(int dimension, int pthreads, double precision) {
 
     pthread_barrier_destroy(&barrier);
     pthread_barrier_destroy(&barrier1);
-    printSquare(previous, dimension);
+    //printSquare(previous, dimension);
     return 0;
 }
 
