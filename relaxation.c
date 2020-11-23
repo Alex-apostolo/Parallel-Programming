@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 // TODO: REMOVE BEFORE UPLOADING
 #include "pthread_barrier.c"
 
@@ -41,18 +42,34 @@ struct CoordNode {
 /*Creates an 2D array of size "dimension*dimension"*/
 void initSquare(double ***square, int dimension) {
     *square = malloc(dimension * sizeof(double *));
-    for (int i = 0; i < dimension; i++) {
+    int i;
+    int j;
+    for (i = 0; i < dimension; i++) {
         (*square)[i] = malloc(dimension * sizeof(double));
-        for (int j = 0; j < dimension; j++) {
+        for (j = 0; j < dimension; j++) {
             if (i == 0 || j == 0)
                 (*square)[i][j] = 1;
         }
     }
 }
 
+void deepCopy(double **src, double ***dst, int dimension) {
+    *dst = malloc(dimension * sizeof(double *));
+    int i;
+    int j;
+    for (i = 0; i < dimension; i++) {
+        (*dst)[i] = malloc(dimension * sizeof(double));
+        for (j = 0; j < dimension; j++) {
+            (*dst)[i][j] = src[i][j];
+        }
+    }
+}
+
 void printSquare(double **square, int dimension) {
-    for (int i = 0; i < dimension; i++) {
-        for (int j = 0; j < dimension; j++) {
+    int i;
+    int j;
+    for (i = 0; i < dimension; i++) {
+        for (j = 0; j < dimension; j++) {
             printf("%f\t", square[i][j]);
         }
         printf("\n");
@@ -112,10 +129,17 @@ void *solve(void *args) {
     pthread_exit(NULL);
 }
 
-int relaxation(int dimension, int pthreads, double precision) {
-    // Initialize the two global arrays
-    initSquare(&current, dimension);
-    initSquare(&previous, dimension);
+int relaxation(double **array, int dimension, int pthreads, double precision) {
+    if (array == NULL) {
+        // Initialize the two global arrays
+        initSquare(&current, dimension);
+        initSquare(&previous, dimension);
+    } else {
+        current = array;
+        // Throws segmentation fault if dimension is greater than the provided
+        // array
+        deepCopy(current, &previous, dimension);
+    }
     // reps is the number of threads the program would create
     int reps;
     if (pthreads < (dimension - 2) * (dimension - 2))
@@ -126,7 +150,9 @@ int relaxation(int dimension, int pthreads, double precision) {
     // Creates a circular linked list of ThreadNodes
     struct ThreadNode *first;
     struct ThreadNode *last;
-    for (int i = 0; i < reps; i++) {
+    int i;
+    int j;
+    for (i = 0; i < reps; i++) {
         struct ThreadNode *temp = malloc(sizeof(struct ThreadNode));
 
         ARGS *arg = malloc(sizeof(ARGS));
@@ -151,23 +177,21 @@ int relaxation(int dimension, int pthreads, double precision) {
     // Traverse the "current" matrix and assign the coordinates to threads in a
     // circular fashion
     struct ThreadNode *current = first;
-    for (int i = 1; i < dimension - 1; i++) {
-        for (int j = 1; j < dimension - 1; j++) {
-            struct Coordinates *ctemp = malloc(sizeof(struct Coordinates));
-            ctemp->i = i;
-            ctemp->j = j;
+    for (i = 1; i < dimension - 1; i++) {
+        for (j = 1; j < dimension - 1; j++) {
+            struct Coordinates ctemp = {i,j};
 
             // Appends "ctemp" to Linked List
             if (current->arg->coordinates_first == NULL) {
                 current->arg->coordinates_first =
                     malloc(sizeof(struct CoordNode));
-                current->arg->coordinates_first->tuple = *ctemp;
+                current->arg->coordinates_first->tuple = ctemp;
                 current->arg->coordinates_last =
                     current->arg->coordinates_first;
             } else {
                 current->arg->coordinates_last->next =
                     malloc(sizeof(struct CoordNode));
-                current->arg->coordinates_last->next->tuple = *ctemp;
+                current->arg->coordinates_last->next->tuple = ctemp;
                 current->arg->coordinates_last =
                     current->arg->coordinates_last->next;
             }
@@ -187,7 +211,7 @@ int relaxation(int dimension, int pthreads, double precision) {
 
     int error;
     current = first;
-    for (int i = 0; i < reps; i++) {
+    for (i = 0; i < reps; i++) {
         error = pthread_create(&tids[i], NULL, solve, current->arg);
         if (error != 0) {
             fprintf(stderr, "\nThread with index: \"%d\" could not be created",
@@ -197,14 +221,29 @@ int relaxation(int dimension, int pthreads, double precision) {
     }
 
     current = first;
-    for (int i = 0; i < reps; i++) {
+    for (i = 0; i < reps; i++) {
         pthread_join(tids[i], NULL);
         current = current->next;
     }
 
     pthread_barrier_destroy(&barrier);
     pthread_barrier_destroy(&barrier1);
-    //printSquare(previous, dimension);
+    printSquare(previous, dimension);
+
+    // Done using everything here so freeing memory (it was going to get freed
+    // by the OS either way so this is a bit pointless)
+    current = first;
+    for(i = 0; i < reps; i++) {
+        struct CoordNode *n = current->arg->coordinates_first;
+        while(n != NULL){
+            struct CoordNode *n1 = n;
+            n = n->next;
+            free(n1);
+        }
+        struct ThreadNode *current1 = current;
+        current = current->next;
+        free(current1);
+    }
     return 0;
 }
 
@@ -223,6 +262,7 @@ int main(int argc, char *argv[]) {
                         "dimension, threads and precision\n");
         return -1;
     }
-    relaxation(dimension, pthreads, precision);
+    // By default pass NULL for the array
+    relaxation(NULL, dimension, pthreads, precision);
     return 0;
 }
