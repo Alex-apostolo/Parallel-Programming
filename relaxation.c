@@ -2,7 +2,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 // TODO: REMOVE BEFORE UPLOADING
 #include "pthread_barrier.c"
 
@@ -41,11 +40,11 @@ struct CoordNode {
 
 /*Creates an 2D array of size "dimension*dimension"*/
 void initSquare(double ***square, int dimension) {
-    *square = malloc(dimension * sizeof(double *));
+    *square = malloc((unsigned long)dimension * sizeof(double *));
     int i;
     int j;
     for (i = 0; i < dimension; i++) {
-        (*square)[i] = malloc(dimension * sizeof(double));
+        (*square)[i] = malloc((unsigned long)dimension * sizeof(double));
         for (j = 0; j < dimension; j++) {
             if (i == 0 || j == 0)
                 (*square)[i][j] = 1;
@@ -54,11 +53,11 @@ void initSquare(double ***square, int dimension) {
 }
 
 void deepCopy(double **src, double ***dst, int dimension) {
-    *dst = malloc(dimension * sizeof(double *));
+    *dst = malloc((unsigned long)dimension * sizeof(double *));
     int i;
     int j;
     for (i = 0; i < dimension; i++) {
-        (*dst)[i] = malloc(dimension * sizeof(double));
+        (*dst)[i] = malloc((unsigned long)dimension * sizeof(double));
         for (j = 0; j < dimension; j++) {
             (*dst)[i][j] = src[i][j];
         }
@@ -78,7 +77,7 @@ void printSquare(double **square, int dimension) {
 }
 
 /*This method is called when a thread gets created*/
-void *solve(void *args) {
+void *thread_func(void *args) {
     // Casts void pointer to ARGS pointer
     ARGS *targs = args;
     // Puts the fields of the args struct to seperate variables for easier use
@@ -86,7 +85,7 @@ void *solve(void *args) {
     int dimension = targs->dimension;
     double precision = targs->precision;
     struct CoordNode *coordinates_first = targs->coordinates_first;
-    struct CoordNode *coordinates_last = targs->coordinates_last;
+    //struct CoordNode *coordinates_last = targs->coordinates_last;
 
     while (success == false) {
         struct CoordNode *temp = coordinates_first;
@@ -129,7 +128,7 @@ void *solve(void *args) {
     pthread_exit(NULL);
 }
 
-int relaxation(double **array, int dimension, int pthreads, double precision) {
+int solver(double **array, int dimension, int pthreads, double precision) {
     if (array == NULL) {
         // Initialize the two global arrays
         initSquare(&current, dimension);
@@ -200,11 +199,11 @@ int relaxation(double **array, int dimension, int pthreads, double precision) {
     }
 
     pthread_t tids[reps];
-    if (pthread_barrier_init(&barrier, NULL, reps) != 0) {
+    if (pthread_barrier_init(&barrier, NULL, (unsigned int)reps) != 0) {
         fprintf(stderr, "\nbarrier init has failed\n");
         return 1;
     };
-    if (pthread_barrier_init(&barrier1, NULL, reps) != 0) {
+    if (pthread_barrier_init(&barrier1, NULL, (unsigned int)reps) != 0) {
         fprintf(stderr, "\nbarrier init has failed\n");
         return 1;
     };
@@ -212,7 +211,7 @@ int relaxation(double **array, int dimension, int pthreads, double precision) {
     int error;
     current = first;
     for (i = 0; i < reps; i++) {
-        error = pthread_create(&tids[i], NULL, solve, current->arg);
+        error = pthread_create(&tids[i], NULL, thread_func, current->arg);
         if (error != 0) {
             fprintf(stderr, "\nThread with index: \"%d\" could not be created",
                     i);
@@ -263,6 +262,6 @@ int main(int argc, char *argv[]) {
         return -1;
     }
     // By default pass NULL for the array
-    relaxation(NULL, dimension, pthreads, precision);
+    solver(NULL, dimension, pthreads, precision);
     return 0;
 }
