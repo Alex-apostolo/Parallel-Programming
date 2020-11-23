@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 // TODO: REMOVE BEFORE UPLOADING
 #include "pthread_barrier.c"
 
@@ -46,7 +47,7 @@ void initSquare(double ***square, int dimension) {
     for (i = 0; i < dimension; i++) {
         (*square)[i] = malloc((unsigned long)dimension * sizeof(double));
         for (j = 0; j < dimension; j++) {
-            if (i == 0 || j == 0 || i == dimension - 1 || j == dimension -1 )
+            if (i == 0 || j == 0 || i == dimension - 1 || j == dimension - 1)
                 (*square)[i][j] = 1;
         }
     }
@@ -62,6 +63,18 @@ void deepCopy(double **src, double ***dst, int dimension) {
             (*dst)[i][j] = src[i][j];
         }
     }
+}
+
+long double sumSquare(double **square, int dimension) {
+    int i;
+    int j;
+    long double sum = 0.0;
+    for (i = 0; i < dimension; i++) {
+        for (j = 0; j < dimension; j++) {
+            sum = sum + square[i][j];
+        }
+    }
+    return sum;
 }
 
 void printSquare(double **square, int dimension) {
@@ -227,7 +240,7 @@ int solver(double **array, int dimension, int pthreads, double precision) {
 
     pthread_barrier_destroy(&barrier);
     pthread_barrier_destroy(&barrier1);
-    printSquare(previous, dimension);
+    // printSquare(previous, dimension);
 
     // Done using everything here so freeing memory (it was going to get freed
     // by the OS either way so this is a bit pointless)
@@ -261,8 +274,26 @@ int main(int argc, char *argv[]) {
                         "dimension, threads and precision\n");
         return -1;
     }
-    
-    // By default pass NULL for the array
+    if (pthreads != 1) {
+        printf("%d,%d,%f,", dimension, pthreads, precision);
+    }
+    struct timespec start, finish;
+    double elapsed;
+
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     solver(NULL, dimension, pthreads, precision);
+
+    clock_gettime(CLOCK_MONOTONIC, &finish);
+
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    printf("%f,",elapsed);
+    // Calculate result and put it here
+     if (pthreads != 1) {
+        printf("%Lf,", sumSquare(previous,dimension));
+    } else {
+        printf("%Lf\n", sumSquare(previous,dimension));
+    }
     return 0;
 }
