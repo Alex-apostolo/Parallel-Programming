@@ -46,7 +46,7 @@ void initSquare(double ***square, int dimension) {
     for (i = 0; i < dimension; i++) {
         (*square)[i] = malloc((unsigned long)dimension * sizeof(double));
         for (j = 0; j < dimension; j++) {
-            if (i == 0 || j == 0)
+            if (i == 0 || j == 0 || i == dimension - 1 || j == dimension -1 )
                 (*square)[i][j] = 1;
         }
     }
@@ -85,7 +85,7 @@ void *thread_func(void *args) {
     int dimension = targs->dimension;
     double precision = targs->precision;
     struct CoordNode *coordinates_first = targs->coordinates_first;
-    //struct CoordNode *coordinates_last = targs->coordinates_last;
+    // struct CoordNode *coordinates_last = targs->coordinates_last;
 
     while (success == false) {
         struct CoordNode *temp = coordinates_first;
@@ -178,7 +178,7 @@ int solver(double **array, int dimension, int pthreads, double precision) {
     struct ThreadNode *current = first;
     for (i = 1; i < dimension - 1; i++) {
         for (j = 1; j < dimension - 1; j++) {
-            struct Coordinates ctemp = {i,j};
+            struct Coordinates ctemp = {i, j};
 
             // Appends "ctemp" to Linked List
             if (current->arg->coordinates_first == NULL) {
@@ -232,9 +232,9 @@ int solver(double **array, int dimension, int pthreads, double precision) {
     // Done using everything here so freeing memory (it was going to get freed
     // by the OS either way so this is a bit pointless)
     current = first;
-    for(i = 0; i < reps; i++) {
+    for (i = 0; i < reps; i++) {
         struct CoordNode *n = current->arg->coordinates_first;
-        while(n != NULL){
+        while (n != NULL) {
             struct CoordNode *n1 = n;
             n = n->next;
             free(n1);
@@ -261,6 +261,7 @@ int main(int argc, char *argv[]) {
                         "dimension, threads and precision\n");
         return -1;
     }
+    
     // By default pass NULL for the array
     solver(NULL, dimension, pthreads, precision);
     return 0;
