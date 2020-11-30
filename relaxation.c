@@ -3,8 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-// TODO: REMOVE BEFORE UPLOADING
-#include "pthread_barrier.c"
 
 /*Global Variables*/
 pthread_barrier_t barrier;
@@ -240,7 +238,7 @@ int solver(double **array, int dimension, int pthreads, double precision) {
 
     pthread_barrier_destroy(&barrier);
     pthread_barrier_destroy(&barrier1);
-    // printSquare(previous, dimension);
+    printSquare(previous, dimension);
 
     // Done using everything here so freeing memory (it was going to get freed
     // by the OS either way so this is a bit pointless)
@@ -274,26 +272,27 @@ int main(int argc, char *argv[]) {
                         "dimension, threads and precision\n");
         return -1;
     }
-    if (pthreads != 1) {
-        printf("%d,%d,%f,", dimension, pthreads, precision);
-    }
-    struct timespec start, finish;
-    double elapsed;
+    //if (pthreads != 1) {
+    //    printf("%d,%d,%f,", dimension, pthreads, precision);
+    //}
+    // Commented out lines where used for testing
+    // struct timespec start, finish;
+    // double elapsed;
 
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    // clock_gettime(CLOCK_MONOTONIC, &start);
 
     solver(NULL, dimension, pthreads, precision);
 
-    clock_gettime(CLOCK_MONOTONIC, &finish);
+    // clock_gettime(CLOCK_MONOTONIC, &finish);
 
-    elapsed = (finish.tv_sec - start.tv_sec);
-    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    printf("%f,",elapsed);
-    // Calculate result and put it here
-     if (pthreads != 1) {
-        printf("%Lf,", sumSquare(previous,dimension));
-    } else {
-        printf("%Lf\n", sumSquare(previous,dimension));
-    }
+    // elapsed = (finish.tv_sec - start.tv_sec);
+    // elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    // printf("%f,",elapsed);
+    // // Calculate result and put it here
+    //  if (pthreads != 1) {
+    //     printf("%Lf,", sumSquare(previous,dimension));
+    // } else {
+    //     printf("%Lf\n", sumSquare(previous,dimension));
+    // }
     return 0;
 }
