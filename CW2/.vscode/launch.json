@@ -5,6 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "(lldb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${fileDirname}/${fileBasenameNoExtension}",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
+        },
+        {
             "name": "gcc - Build and debug active file",
             "type": "cppdbg",
             "request": "launch",
