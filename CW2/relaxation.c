@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-/* Creates array with size dimension^2 */
+/* Creates array with size dimension^2 with padded edges */
 void initSquare(double **square, int dimension) {
     int size = dimension * dimension;
     *square = calloc(1, size * sizeof(double));
@@ -47,14 +47,19 @@ void printSquare(double *square, int dimension) {
 }
 
 void parallelFunc(double **previous, double **current, int dimension,
-                  float precision, int mpi_size, int mpi_rank) {
-    int i;
-    int j;
-    int k;
-    for (i = 0, k = 0; i < dimension; i++) {
-        for (j = 0; j < dimension; j++, k++) {
-            // if (i == 0 || j == 0 || i == dimension - 1 || j == dimension - 1)
-            // (*square)[k] = 1;
+                  float precision, int processors, int rank) {
+    // to find the number of calculations this processor will do
+    // take the size and divide it by the number of processors
+    int calculations = (dimension * dimension) / processors;
+    // calculate which range of values this processor will compute
+    int x0 = rank * calculations;
+    int x1 = (rank + 1) * calculations;
+
+    for (int i = x0; i < x1; i++) {
+        if ((*previous)[i] != 1) {
+            (*current)[i] = ((*previous)[i - 1] + (*previous)[i + 1] +
+                             (*previous)[i - dimension] + (*previous)[i + dimension]) /
+                            4;
         }
     }
 }
@@ -64,7 +69,7 @@ void parallelFunc(double **previous, double **current, int dimension,
  (2) Initialization of MPI and execution of parallel function
  (3) Prints the resulting array (Optionally)
  */
-int solver(double *array, int dimension, int processors, double precision) {
+int solver(double *array, int dimension, double precision) {
 
     /* Initilization of current and previous arrays
      * $ Code below runs sequentially $
@@ -72,9 +77,6 @@ int solver(double *array, int dimension, int processors, double precision) {
 
     // Size of array argument
     int size = dimension * dimension;
-
-    // If provided more processors than the size of the array then ceil it
-    processors = (processors < size) ? processors : size;
 
     // Current and Previous are initialized
     double *current;
@@ -94,23 +96,23 @@ int solver(double *array, int dimension, int processors, double precision) {
      * $ Code below runs in parallel $
      */
 
-    // // Initialization of the MPI environment
-    // MPI_Init(NULL, NULL);
+    // Initialization of the MPI environment
+    MPI_Init(NULL, NULL);
 
-    // // Get number of processors associated with the communicator
-    // int mpi_size;
-    // MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+    // Get number of processors associated with the communicator
+    int mpi_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 
-    // // Get rank of the calling processor
-    // int mpi_rank;
-    // MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    // Get rank of the calling processor
+    int mpi_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-    // // Run parallel function here
-    // parallelFunc(&previous, &current, dimension, precision, mpi_size,
-    // mpi_rank);
+    // Run parallel function here
+    parallelFunc(&previous, &current, dimension, precision, mpi_size,
+    mpi_rank);
 
-    // // Finalizes MPI and after this resources can be freed
-    // MPI_Finalize();
+    // Finalizes MPI and after this resources can be freed
+    MPI_Finalize();
 
     /* Prints the resulting array
      * $ Code below runs sequentially $
@@ -132,10 +134,8 @@ int main(int argc, char *argv[]) {
     // Dimension is the number of rows or columns, for example dimension = 5
     // will make an array of 5 x 5
     int dimension = atoi(argv[1]);
-    // remove processors
-    int processors = atoi(argv[2]);
-    double precision = atof(argv[3]);
-    if (dimension <= 0 || processors <= 0 || precision <= 0.0) {
+    double precision = atof(argv[2]);
+    if (dimension <= 0 || precision <= 0.0) {
         fprintf(stderr, "Error: make sure you entered correct values for "
                         "dimension, threads and precision\n");
         return -1;
@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
 
     // clock_gettime(CLOCK_MONOTONIC, &start);
 
-    solver(NULL, dimension, processors, precision);
+    solver(NULL, dimension, precision);
 
     // clock_gettime(CLOCK_MONOTONIC, &finish);
 
