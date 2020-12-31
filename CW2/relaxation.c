@@ -16,47 +16,94 @@ void init_sub_array(double **sub_array, int dimension, int x0, int x1) {
     int k;
     for (i = x0, k = 0; i < x1; i++, k++) {
         // If first row
-        if((i >= 0) && (i < dimension))
+        if ((i >= 0) && (i < dimension))
             (*sub_array)[k] = 1;
         // If last row
-        if((i >= (size - dimension)) && (i < size))
+        if ((i >= (size - dimension)) && (i < size))
             (*sub_array)[k] = 1;
         // If first column
-        if((i % dimension) == 0)
+        if ((i % dimension) == 0)
             (*sub_array)[k] = 1;
         // // If last column
-        if((i % dimension) == (dimension - 1))
+        if ((i % dimension) == (dimension - 1))
             (*sub_array)[k] = 1;
     }
 }
 
 /* Prints array given the dimension */
 void print_array(double *array, int dimension, int x0, int x1) {
-    for(int i = 1; i <= (x1-x0); i++) {
-        printf("%f\t", array[i-1]);
-        if((i % dimension) == 0)
+    for (int i = 1; i <= (x1 - x0); i++) {
+        printf("%f\t", array[i - 1]);
+        if ((i % dimension) == 0)
             printf("\n");
     }
 }
 
-void solver(double **previous, double **current, int dimension, double precision,
-            int processors, int rank) {
-    // to find the number of calculations this processor will do
-    // take the size and divide it by the number of processors
-    int calculations = (dimension * dimension) / processors;
+void solver(double **previous, double **current, int dimension,
+            double precision, int processors, int rank) {
+    if (processors > dimension) {
+        // Ceil processors to dimension
+        processors = dimension;
+    }
+    // quotient is the number of lines each processor will calculate
+    int quotient = dimension / processors;
+    // remainder used for last processors calculations
+    int remainder = dimension % processors;
     // calculate which range of values this processor will compute
-    int x0 = rank * dimension;
-    int x1 = x0 + (3 * dimension);
-    printf("x0: %d, x1: %d\n", x0, x1);
-    //init_sub_array(previous, dimension, 4, 16);
-    // Initialize previous and current 
-    if(*previous == NULL) {
+    int x0 = rank * quotient * dimension;
+    int x1 = x0 + (quotient * dimension);
+    // Adds one extra row to be calculated by the last processor
+    if (remainder != 0 && rank == processors - 1) {
+        x1 += remainder * dimension;
+    }
+    // Depending on the rank of the processor we add extra rows to help with the
+    // computation of their values
+    if (rank == 0) {
+        // Adds row at the end
+        x1 += dimension;
+    } else if (rank == processors - 1) {
+        // Adds row at the start
+        x0 -= dimension;
+    } else {
+        // TODO: test with > 2 processors split
+        // Adds row at the start and end
+        x0 -= dimension;
+        x1 += dimension;
+    }
+
+    // Initialize previous and current
+    if (*previous == NULL) {
         init_sub_array(previous, dimension, x0, x1);
     }
-    if(*current == NULL) {
-        *current = malloc((x1 - x0)*sizeof(double));
+    if (*current == NULL) {
+        init_sub_array(current, dimension, x0, x1);
     }
-    print_array(*previous, dimension, x0, x1);
+
+    // TEST: printf("x0: %d, x1: %d\n", x0, x1);
+    int i;
+    // c is used as a counter
+    int c;
+    // Iterate through inner array to calculate their values
+    for (i = dimension + 1, c = 0; i < (x1 - x0 - dimension - 1); i++, c++) {
+        // TEST: printf("rank: %d, i: %d c: %d\n", rank, i, c);
+        if(c == dimension - 2) {
+            // when we reach the last column of the inner array
+            // skip two values from i and assing to c = -1
+            i++;
+            c = -1;
+            continue;
+        }
+        // apply relaxation to i'th element
+        (*current)[i] =
+            ((*previous)[i - 1] + (*previous)[i + 1] +
+             (*previous)[i - dimension] + (*previous)[i + dimension]) /
+            4;
+    }
+
+    print_array(*current, dimension, x0, x1);
+    printf("\n");
+    // TEST: print_array(*previous, dimension, x0, x1);
+    // printf("\n");
 }
 
 int main(int argc, char *argv[]) {
