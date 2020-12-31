@@ -19,15 +19,15 @@ void init_sub_array(double **sub_array, int dimension, int x0, int x1) {
         // If first row
         if ((i >= 0) && (i < dimension))
             (*sub_array)[k] = 1;
-        // If last row
-        if ((i >= (size - dimension)) && (i < size))
-            (*sub_array)[k] = 1;
+        // // If last row
+        // if ((i >= (size - dimension)) && (i < size))
+        //     (*sub_array)[k] = 1;
         // If first column
         if ((i % dimension) == 0)
             (*sub_array)[k] = 1;
         // // If last column
-        if ((i % dimension) == (dimension - 1))
-            (*sub_array)[k] = 1;
+        // if ((i % dimension) == (dimension - 1))
+        //     (*sub_array)[k] = 1;
     }
 }
 
@@ -159,14 +159,15 @@ void send_row_MPI(double **current, int size, int dimension, int processors,
 void recv_row_MPI(double **current, int size, int dimension, int processors,
                   int rank, MPI_Status status) {
     // printf("rank: %d\n", rank);
-    // Receive rows needed by other processors 
+    // Receive rows needed by other processors
     if (rank == 0) {
         double *second_row = malloc(dimension * sizeof(double));
         // MPI_Recv gets second_row from rank 1
-        MPI_Recv(second_row, dimension, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
-        
+        MPI_Recv(second_row, dimension, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD,
+                 &status);
+
         // Replace last row of current with the received one
-        for(int i = 0; i < dimension; i++) {
+        for (int i = 0; i < dimension; i++) {
             (*current)[size - dimension + i] = second_row[i];
         }
     } else if (rank == processors - 1) {
@@ -186,11 +187,11 @@ void recv_row_MPI(double **current, int size, int dimension, int processors,
         MPI_Recv(second_last_row, dimension, MPI_DOUBLE, rank - 1, 0,
                  MPI_COMM_WORLD, &status);
         // MPI_Recv gets second_row from rank + 1
-        MPI_Recv(second_row, dimension, MPI_DOUBLE, rank + 1, 0,
-                 MPI_COMM_WORLD, &status);
+        MPI_Recv(second_row, dimension, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD,
+                 &status);
 
         // Replace last row of current with the received one
-        for(int i = 0; i < dimension; i++) {
+        for (int i = 0; i < dimension; i++) {
             (*current)[size - dimension + i] = second_row[i];
         }
         // Replace first row of current with the received one
@@ -209,6 +210,7 @@ void recv_row_MPI(double **current, int size, int dimension, int processors,
 void solver(double **previous, double **current, int dimension,
             double precision, int processors, int rank, MPI_Status status,
             int x0, int x1) {
+
     // Initialize previous and current
     if (*previous == NULL || *current == NULL) {
         // Calculate the range of the values used by the arrays
@@ -220,9 +222,6 @@ void solver(double **previous, double **current, int dimension,
     // Apply relaxation to the previous array and store to current
     int success = relaxation(previous, current, x1 - x0, dimension, precision);
 
-    // print_sub_array(*current, dimension, x0, x1);
-    // printf("\nblablablablablablablabl\n\n\n");
-
     // Send row/s to other processor
     send_row_MPI(current, x1 - x0, dimension, processors, rank);
 
@@ -230,33 +229,34 @@ void solver(double **previous, double **current, int dimension,
     MPI_Send(&success, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
 
     // Barrier used here to wait for all the processors to complete their
-    // execution After this barrier we will perform the swap between current and
-    // previous And check if we have to repeat the function again
+    // execution After this barrier we will perform the swap between current
+    // and previous And check if we have to repeat the function again
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Receive row/s from other processor and update current
     recv_row_MPI(current, x1 - x0, dimension, processors, rank, status);
 
-    // If processor 0 receive all success's and broadcast new cont
-    int success_for_all;
-    if(rank == 0){
-        int success_for_all = 1;
+    // If processor 0 receive all success's broadcast it
+    int success_for_all = 0;
+    if (rank == 0) {
+        success_for_all = 1;
         int temp;
-        for(int i = 0; i < processors; i++) {
+        for (int i = 0; i < processors; i++) {
             MPI_Recv(&temp, 1, MPI_INT, i, 1, MPI_COMM_WORLD, &status);
             success_for_all = success_for_all && temp;
         }
     }
 
-    // everyone calls bcast, data is taken from root and ends up in everyone's success_for_all 
+    // everyone calls bcast, data is taken from root and ends up in
+    // everyone's success_for_all
     MPI_Bcast(&success_for_all, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    if(!success_for_all) {
+    if (!success_for_all) {
         solver(current, previous, dimension, precision, processors, rank, status, x0, x1);
-    }else {
-        printf("Successfully completed from rank: %d\n", rank);
-        print_sub_array(*current, dimension, x0, x1);
-        printf("\n");
+    } else {
+        // printf("Successfully completed from rank: %d\n", rank);
+        // print_sub_array(*current, dimension, x0, x1);
+        // printf("\n");
     }
 }
 
