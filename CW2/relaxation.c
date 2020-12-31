@@ -220,8 +220,8 @@ void solver(double **previous, double **current, int dimension,
     // Apply relaxation to the previous array and store to current
     int success = relaxation(previous, current, x1 - x0, dimension, precision);
 
-    print_sub_array(*current, dimension, x0, x1);
-    printf("\nblablablablablablablabl\n\n\n");
+    // print_sub_array(*current, dimension, x0, x1);
+    // printf("\nblablablablablablablabl\n\n\n");
 
     // Send row/s to other processor
     send_row_MPI(current, x1 - x0, dimension, processors, rank);
@@ -238,23 +238,26 @@ void solver(double **previous, double **current, int dimension,
     recv_row_MPI(current, x1 - x0, dimension, processors, rank, status);
 
     // If processor 0 receive all success's and broadcast new cont
+    int success_for_all;
     if(rank == 0){
-        int cont = 1;
+        int success_for_all = 1;
         int temp;
         for(int i = 0; i < processors; i++) {
             MPI_Recv(&temp, 1, MPI_INT, i, 1, MPI_COMM_WORLD, &status);
-            cont = cont && temp;
+            success_for_all = success_for_all && temp;
         }
-        // Broadcast cont value
-        MPI_Bcast(&cont, 1, MPI_INT, 0, MPI_COMM_WORLD);
     }
 
-    print_sub_array(*current, dimension, x0, x1);
-    printf("\n");
+    // everyone calls bcast, data is taken from root and ends up in everyone's success_for_all 
+    MPI_Bcast(&success_for_all, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    // If broadcasted success is false then swap previous and current and call function again
+    if(!success_for_all) {
+        solver(current, previous, dimension, precision, processors, rank, status, x0, x1);
+    }else {
+        printf("Successfully completed from rank: %d\n", rank);
+        print_sub_array(*current, dimension, x0, x1);
+        printf("\n");
+    }
 }
 
 int main(int argc, char *argv[]) {
