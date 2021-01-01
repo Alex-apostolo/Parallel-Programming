@@ -121,7 +121,7 @@ void send_row_MPI(double **current, int size, int dimension, int processors,
         memcpy(second_last_row, &(*current)[size - (2 * dimension)],
                dimension * sizeof(double));
         // MPI_Send sends second_last_row to rank 1
-        MPI_Send(second_last_row, dimension, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+        MPI_Send(second_last_row, dimension, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD);
         // Free's resource no longer in use
         free(second_last_row);
     } else if (rank == processors - 1) {
@@ -137,9 +137,9 @@ void send_row_MPI(double **current, int size, int dimension, int processors,
         double *second_row = malloc(dimension * sizeof(double));
         double *second_last_row = malloc(dimension * sizeof(double));
         // Copy second_row from current
-        memcpy(second_row, &(*current)[0], dimension * sizeof(double));
+        memcpy(second_row, &(*current)[dimension], dimension * sizeof(double));
         // Copy second_last_row from current
-        memcpy(second_last_row, &(*current)[size - dimension],
+        memcpy(second_last_row, &(*current)[size - (2 * dimension)],
                dimension * sizeof(double));
         // MPI_Send sends second_row to rank - 1
         MPI_Send(second_row, dimension, MPI_DOUBLE, rank - 1, 0,
@@ -263,9 +263,9 @@ void solver(double **previous, double **current, int dimension,
             *previous = *current;
             *current = temp;
         } else {
-            // printf("Successfully completed from rank: %d\n", rank);
-            // print_sub_array(*current, dimension, x0, x1);
-            // printf("\n");
+            printf("Successfully completed from rank: %d\n", rank);
+            print_sub_array(*current, dimension, x0, x1);
+            printf("\n");
         }
     }
 }
