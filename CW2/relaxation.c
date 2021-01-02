@@ -5,32 +5,6 @@
 #include <string.h>
 #include <time.h>
 
-/* Initializes sub_array for the ranges x0 to x1 of the actual array */
-void init_sub_array(double **sub_array, int dimension, int x0, int x1) {
-    // Total size of array
-    int size = dimension * dimension;
-    // Initialize sub_array with zeroes
-    *sub_array = calloc(1, (x1 - x0) * sizeof(double));
-
-    // Fill sub_array
-    int i;
-    int k;
-    for (i = x0, k = 0; i < x1; i++, k++) {
-        // If first row
-        if ((i >= 0) && (i < dimension))
-            (*sub_array)[k] = 1;
-        // // If last row
-        // if ((i >= (size - dimension)) && (i < size))
-        //     (*sub_array)[k] = 1;
-        // If first column
-        if ((i % dimension) == 0)
-            (*sub_array)[k] = 1;
-        // // If last column
-        // if ((i % dimension) == (dimension - 1))
-        //     (*sub_array)[k] = 1;
-    }
-}
-
 /* Prints array given the dimension */
 void print_sub_array(double *sub_array, int dimension, int x0, int x1) {
     int i;
@@ -38,6 +12,42 @@ void print_sub_array(double *sub_array, int dimension, int x0, int x1) {
         printf("%f\t", sub_array[i - 1]);
         if ((i % dimension) == 0)
             printf("\n");
+    }
+}
+
+/* Applies rand and a seed, returns random value */
+double get_random_double(int seed) {
+    // We use %100 to ensure that when we perform sum_array we don't have an
+    // overflow The value 1.294 ensures that the result has a decimal part
+    return (double)(((seed + 1) % 100 / 1.294));
+}
+
+/* Initializes sub_array for the ranges x0 to x1 of the actual array */
+void init_sub_array(double **sub_array, int dimension, int x0, int x1) {
+    // Initializes rand with a seed
+    // I used a constant number so that every time I run rand I will get the
+    // same values for the correctness testing
+    srand(21);
+    // Total size of array
+    int size = dimension * dimension;
+    // Initialize sub_array with zeroes
+    *sub_array = calloc(1, (x1 - x0) * sizeof(double));
+    // Fill sub_array
+    int i;
+    int k;
+    for (i = x0, k = 0; i < x1; i++, k++) {
+        // If first row
+        if ((i >= 0) && (i < dimension))
+            (*sub_array)[k] = get_random_double(i);
+        // If last row
+        if ((i >= (size - dimension)) && (i < size))
+            (*sub_array)[k] = get_random_double(i);
+        // If first column
+        if ((i % dimension) == 0)
+            (*sub_array)[k] = get_random_double(i);
+        // If last column
+        if ((i % dimension) == (dimension - 1))
+            (*sub_array)[k] = get_random_double(i);
     }
 }
 
@@ -77,6 +87,53 @@ void calculate_rank_range(int dimension, int processors, int rank, int *x0,
     }
     *x0 = x0_;
     *x1 = x1_;
+}
+
+/* Sums whole array which is seperated into the processors */
+long double sum_array(double *current, int dimension, int processors,
+                      int rank) {
+    int x0, x1;
+    calculate_rank_range(dimension, processors, rank, &x0, &x1);
+    long double result = 0.0;
+    long double result_arr[processors];
+
+    // if running on only one processor
+    if (processors == 1) {
+        for (int i = 0; i < (x1 - x0); i++)
+            result += current[i];
+        return result;
+    }
+
+    if (rank == 0) {
+        // take everything but the last row
+        for (int i = 0; i < (x1 - x0) - dimension; i++)
+            result += current[i];
+    } else if (rank == (processors - 1)) {
+        // take everything but the first row
+        for (int i = dimension; i < (x1 - x0); i++)
+            result += current[i];
+    } else {
+        // take everything but the first or last rows
+        for (int i = dimension; i < (x1 - x0) - dimension; i++)
+            result += current[i];
+    }
+
+    // Each processor sends its result value to processor 0
+    int ierr = MPI_Gather(&result, 1, MPI_LONG_DOUBLE, &result_arr, 1,
+                          MPI_LONG_DOUBLE, 0, MPI_COMM_WORLD);
+    if (ierr != 0) {
+        fprintf(stderr, "Error: MPI_Gather failed\n");
+        exit(-2);
+    }
+
+    // Total result is calculated from the gathered results from the processors
+    if (rank == 0) {
+        result = 0;
+        int i;
+        for (i = 0; i < processors; i++)
+            result += result_arr[i];
+    }
+    return result;
 }
 
 /* Applies the relaxation technique to the previous
@@ -217,13 +274,16 @@ void sendrecv_row_MPI(double **current, int size, int dimension, int processors,
 */
 void solver(double **previous, double **current, int dimension,
             double precision, int processors, int rank, MPI_Status status,
-            MPI_Request request, int x0, int x1) {
+            MPI_Request request) {
 
     // Success_for_all shows when every processor has successfully passed
     // relaxation
-    int success_for_all = 0;
     // This array is used for gathering all of the successes to processor 0
+    int success_for_all = 0;
     int success_arr[processors];
+    // x0 is the start and x1 is the end for the values that a processor will
+    // calculate x1 - x0 is the range
+    int x0, x1;
     while (!success_for_all) {
         // Initialize previous and current
         if (*previous == NULL || *current == NULL) {
@@ -278,9 +338,9 @@ void solver(double **previous, double **current, int dimension,
             *current = temp;
         } else {
             // For testing purposes, executed only when the program ends
-            printf("Successfully completed from rank: %d\n", rank);
-            print_sub_array(*current, dimension, x0, x1);
-            printf("\n");
+            // printf("Successfully completed from rank: %d\n", rank);
+            // print_sub_array(*current, dimension, x0, x1);
+            // printf("\n");
         }
     }
 }
@@ -325,19 +385,19 @@ int main(int argc, char *argv[]) {
     int mpi_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-    if (mpi_size > dimension) {
+    if (mpi_size > dimension - 2) {
         if (mpi_rank == 0)
             fprintf(stderr,
                     "Error: mpi_size cannot be greater than the number of "
-                    "rows of the arrays\n");
+                    "rows of the arrays to be processed\n");
         return -1;
     }
 
     // Commented out lines where used for testing
-    // struct timespec start, finish;
-    // double elapsed;
+    struct timespec start, finish;
+    double elapsed;
 
-    // clock_gettime(CLOCK_MONOTONIC, &start);
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     // Runs solver, calculates current array until the
     // precision is met
@@ -345,20 +405,23 @@ int main(int argc, char *argv[]) {
     // as the range x0, x1
     double *previous = NULL;
     double *current = NULL;
+
     solver(&previous, &current, dimension, precision, mpi_size, mpi_rank,
-           status, request, 0, 0);
+           status, request);
 
-    // clock_gettime(CLOCK_MONOTONIC, &finish);
+    clock_gettime(CLOCK_MONOTONIC, &finish);
 
-    // elapsed = (finish.tv_sec - start.tv_sec);
-    // elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    // printf("%f,",elapsed);
-    // // Calculate result and put it here
-    //  if (pthreads != 1) {
-    //     printf("%Lf,", sumSquare(previous,dimension));
-    // } else {
-    //     printf("%Lf\n", sumSquare(previous,dimension));
-    // }
+    elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    printf("%f,", elapsed);
+    // Calculate result and put it here
+    if (mpi_size != 1) {
+        long double result = sum_array(current, dimension, mpi_size, mpi_rank);
+        if (mpi_rank == 0)
+            printf("%Lf,", result);
+    } else {
+        printf("%Lf\n", sum_array(current, dimension, mpi_size, mpi_rank));
+    }
 
     // Finalizes MPI and after this resources can be freed
     MPI_Finalize();
