@@ -45,9 +45,11 @@ void print_sub_array(double *sub_array, int dimension, int x0, int x1) {
  * will receive*/
 void calculate_rank_range(int dimension, int processors, int rank, int *x0,
                           int *x1) {
-    if (processors > dimension) {
-        // Ceil processors to dimension
-        processors = dimension;
+    // range if only one processor
+    if (processors == 1) {
+        *x0 = 0;
+        *x1 = dimension * dimension;
+        return;
     }
     // quotient is the number of lines each processor will calculate
     int quotient = dimension / processors;
@@ -119,6 +121,13 @@ void sendrecv_row_MPI(double **current, int size, int dimension, int processors,
                       int rank, MPI_Status status) {
     double *second_row = malloc(dimension * sizeof(double));
     double *second_last_row = malloc(dimension * sizeof(double));
+    int mpi_err;
+
+    // In the case when we have only one processor, we don't need any MPI
+    // communication
+    if (processors == 1)
+        return;
+
     // Send rows needed by other processors to complete their current array
     if (rank == 0) {
         // Copy second_last_row from current
@@ -126,9 +135,14 @@ void sendrecv_row_MPI(double **current, int size, int dimension, int processors,
                dimension * sizeof(double));
         // MPI_Send sends second_last_row to rank 1
         // MPI_Recv gets second_row from rank 1
-        MPI_Sendrecv(second_last_row, dimension, MPI_DOUBLE, rank + 1, 0,
-                     second_row, dimension, MPI_DOUBLE, rank + 1, 0,
-                     MPI_COMM_WORLD, &status);
+        mpi_err = MPI_Sendrecv(second_last_row, dimension, MPI_DOUBLE, rank + 1,
+                               0, second_row, dimension, MPI_DOUBLE, rank + 1,
+                               0, MPI_COMM_WORLD, &status);
+        // Checking if mpi
+        if (mpi_err != MPI_SUCCESS) {
+            fprintf(stderr, "Error: Failed to send or receive row\n");
+            exit(-2);
+        }
         // Replace last row of current with the received one
         int i;
         for (i = 0; i < dimension; i++) {
@@ -139,9 +153,14 @@ void sendrecv_row_MPI(double **current, int size, int dimension, int processors,
         memcpy(second_row, &(*current)[dimension], dimension * sizeof(double));
         // MPI_Send sends second_row to rank - 1
         // MPI_Recv gets second_last_row from rank - 1
-        MPI_Sendrecv(second_row, dimension, MPI_DOUBLE, rank - 1, 0,
-                     second_last_row, dimension, MPI_DOUBLE, rank - 1, 0,
-                     MPI_COMM_WORLD, &status);
+        mpi_err = MPI_Sendrecv(second_row, dimension, MPI_DOUBLE, rank - 1, 0,
+                               second_last_row, dimension, MPI_DOUBLE, rank - 1,
+                               0, MPI_COMM_WORLD, &status);
+        // Checking if mpi
+        if (mpi_err != MPI_SUCCESS) {
+            fprintf(stderr, "Error: Failed to send or receive row\n");
+            exit(-2);
+        }
         // Replace first row of current with the received one
         int i;
         for (i = 0; i < dimension; i++) {
@@ -152,9 +171,14 @@ void sendrecv_row_MPI(double **current, int size, int dimension, int processors,
         memcpy(second_row, &(*current)[dimension], dimension * sizeof(double));
         // MPI_Recv gets second_last_row from rank - 1
         // MPI_Send sends second_row to rank - 1
-        MPI_Sendrecv(second_row, dimension, MPI_DOUBLE, rank - 1, 0,
-                     second_last_row, dimension, MPI_DOUBLE, rank - 1, 0,
-                     MPI_COMM_WORLD, &status);
+        mpi_err = MPI_Sendrecv(second_row, dimension, MPI_DOUBLE, rank - 1, 0,
+                               second_last_row, dimension, MPI_DOUBLE, rank - 1,
+                               0, MPI_COMM_WORLD, &status);
+        // Checking if mpi
+        if (mpi_err != MPI_SUCCESS) {
+            fprintf(stderr, "Error: Failed to send or receive row\n");
+            exit(-2);
+        }
         // Replace first row of current with the received on
         int i;
         for (i = 0; i < dimension; i++) {
@@ -166,19 +190,24 @@ void sendrecv_row_MPI(double **current, int size, int dimension, int processors,
                dimension * sizeof(double));
         // MPI_Send sends second_last_row to rank + 1
         // MPI_Recv gets second_row from rank + 1
-        MPI_Sendrecv(second_last_row, dimension, MPI_DOUBLE, rank + 1, 0,
-                     second_row, dimension, MPI_DOUBLE, rank + 1, 0,
-                     MPI_COMM_WORLD, &status);
+        int mpi_err2 = MPI_Sendrecv(
+            second_last_row, dimension, MPI_DOUBLE, rank + 1, 0, second_row,
+            dimension, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &status);
+        // Checking if mpi
+        if (mpi_err2 != MPI_SUCCESS) {
+            fprintf(stderr, "Error: Failed to send or receive row\n");
+            exit(-2);
+        }
 
         // Replace last row of current with the received one
         for (i = 0; i < dimension; i++) {
             (*current)[size - dimension + i] = second_row[i];
         }
     }
+    // Frees allocated resources
     free(second_row);
     free(second_last_row);
 }
-
 
 /* Does (4) things
     (1) Initializes previous and current arrays
@@ -187,10 +216,13 @@ void sendrecv_row_MPI(double **current, int size, int dimension, int processors,
     (4) Swaps current and previous and checks if to continue relaxation
 */
 void solver(double **previous, double **current, int dimension,
-            double precision, int processors, int rank, MPI_Status status, MPI_Request request,
-            int x0, int x1) {
+            double precision, int processors, int rank, MPI_Status status,
+            MPI_Request request, int x0, int x1) {
 
+    // Success_for_all shows when every processor has successfully passed
+    // relaxation
     int success_for_all = 0;
+    // This array is used for gathering all of the successes to processor 0
     int success_arr[processors];
     while (!success_for_all) {
         // Initialize previous and current
@@ -205,12 +237,20 @@ void solver(double **previous, double **current, int dimension,
         int success =
             relaxation(previous, current, x1 - x0, dimension, precision);
 
-        // Send row/s to other processor
+        // Send row/s to other processor/s and receive row/s from other
+        // processor/s
         sendrecv_row_MPI(current, x1 - x0, dimension, processors, rank, status);
 
-        // Send success to processor 0
-        MPI_Gather(&success, 1, MPI_INT, &success_arr, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        // Each processor sends its success value to processor 0
+        int ierr = MPI_Gather(&success, 1, MPI_INT, &success_arr, 1, MPI_INT, 0,
+                              MPI_COMM_WORLD);
+        if (ierr != 0) {
+            fprintf(stderr, "Error: MPI_Gather failed\n");
+            exit(-2);
+        }
 
+        // For success_for_all to be true all the gathered success's need to be
+        // true Only then may the program terminate
         if (rank == 0) {
             success_for_all = 1;
             int temp;
@@ -221,17 +261,26 @@ void solver(double **previous, double **current, int dimension,
 
         // everyone calls bcast, data is taken from root and ends up in
         // everyone's success_for_all
-        MPI_Ibcast(&success_for_all, 1, MPI_INT, 0, MPI_COMM_WORLD, &request);
+        ierr = MPI_Ibcast(&success_for_all, 1, MPI_INT, 0, MPI_COMM_WORLD,
+                          &request);
+        // everyone waits to receive the value of success_for_all
         MPI_Wait(&request, &status);
 
+        if (ierr != 0) {
+            fprintf(stderr, "Error: MPI_Ibcast failed\n");
+            exit(-2);
+        }
+
         if (!success_for_all) {
+            // Swap current array with previous array
             double *temp = *previous;
             *previous = *current;
             *current = temp;
         } else {
-            // printf("Successfully completed from rank: %d\n", rank);
-            // print_sub_array(*current, dimension, x0, x1);
-            // printf("\n");
+            // For testing purposes, executed only when the program ends
+            printf("Successfully completed from rank: %d\n", rank);
+            print_sub_array(*current, dimension, x0, x1);
+            printf("\n");
         }
     }
 }
@@ -253,7 +302,7 @@ int main(int argc, char *argv[]) {
     double precision = atof(argv[2]);
     if (dimension <= 0 || precision <= 0.0) {
         fprintf(stderr, "Error: make sure you entered correct values for "
-                        "dimension, threads and precision\n");
+                        "dimension or precision\n");
         return -1;
     }
 
@@ -263,6 +312,11 @@ int main(int argc, char *argv[]) {
     // Initialization of the MPI environment
     int ierr = MPI_Init(NULL, NULL);
 
+    if (ierr != MPI_SUCCESS) {
+        fprintf(stderr, "Error: could not initialize MPI library\n");
+        return -1;
+    }
+
     // Get number of processors associated with the communicator
     int mpi_size;
     MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
@@ -271,9 +325,14 @@ int main(int argc, char *argv[]) {
     int mpi_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-    // if (pthreads != 1) {
-    //    printf("%d,%d,%f,", dimension, pthreads, precision);
-    //}
+    if (mpi_size > dimension) {
+        if (mpi_rank == 0)
+            fprintf(stderr,
+                    "Error: mpi_size cannot be greater than the number of "
+                    "rows of the arrays\n");
+        return -1;
+    }
+
     // Commented out lines where used for testing
     // struct timespec start, finish;
     // double elapsed;
