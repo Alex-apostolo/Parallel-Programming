@@ -5,6 +5,11 @@
 #include <string.h>
 #include <time.h>
 
+struct mean_std_div {
+    double mean;
+    double std_div;
+};
+
 /* Prints array given the dimension */
 void print_sub_array(double *sub_array, int dimension, int x0, int x1) {
     int i;
@@ -17,17 +22,14 @@ void print_sub_array(double *sub_array, int dimension, int x0, int x1) {
 
 /* Applies rand and a seed, returns random value */
 double get_random_double(int seed) {
-    // We use %100 to ensure that when we perform sum_array we don't have an
-    // overflow The value 1.294 ensures that the result has a decimal part
-    return (double)(((seed + 1) % 100 / 1.294));
+    // We use %10 to ensure that when we perform sum_array we don't have an
+    // overflow, also because it takes less time to do computatitions. The
+    // value 1.294 ensures that the result has a decimal part
+    return (double)(((seed + 1) % 10 / 1.294));
 }
 
 /* Initializes sub_array for the ranges x0 to x1 of the actual array */
 void init_sub_array(double **sub_array, int dimension, int x0, int x1) {
-    // Initializes rand with a seed
-    // I used a constant number so that every time I run rand I will get the
-    // same values for the correctness testing
-    srand(21);
     // Total size of array
     int size = dimension * dimension;
     // Initialize sub_array with zeroes
@@ -345,6 +347,26 @@ void solver(double **previous, double **current, int dimension,
     }
 }
 
+/* Calculates mean and standard_deviation and returns them to a touple */
+struct mean_std_div standard_deviation(double *arr, int length) {
+    // Calculate mean for elapsed times
+    double mean = 0.0;
+    for (int i = 0; i < length; i++) {
+        mean += arr[i];
+    }
+    mean = mean / length;
+
+    // Calculate variance
+    double variance = 0.0;
+    for (int i = 0; i < length; i++) {
+        variance += pow(arr[i] - mean, 2);
+    }
+    variance = variance / length;
+    double standard = sqrt(variance);
+    struct mean_std_div mstd = {mean, standard};
+    return mstd;
+}
+
 int main(int argc, char *argv[]) {
     // // For debugging
     // argc = 3;
@@ -393,34 +415,43 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // Commented out lines where used for testing
-    struct timespec start, finish;
-    double elapsed;
-
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
-    // Runs solver, calculates current array until the
-    // precision is met
     // previous and current passed as NULL, to be initialized later as well
-    // as the range x0, x1
     double *previous = NULL;
     double *current = NULL;
 
-    solver(&previous, &current, dimension, precision, mpi_size, mpi_rank,
-           status, request);
+    // Commented out lines where used for testing
+    struct timespec start, finish;
+    int reps = 3;
+    double elapsed[reps];
 
-    clock_gettime(CLOCK_MONOTONIC, &finish);
+    for (int i = 0; i < reps; i++) {
+        clock_gettime(CLOCK_MONOTONIC, &start);
 
-    elapsed = (finish.tv_sec - start.tv_sec);
-    elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
-    printf("%f,", elapsed);
+        previous = NULL;
+        current = NULL;
+        // Runs solver, calculates current array until the
+        // precision is met
+        solver(&previous, &current, dimension, precision, mpi_size, mpi_rank,
+               status, request);
+
+        clock_gettime(CLOCK_MONOTONIC, &finish);
+
+        elapsed[i] = (finish.tv_sec - start.tv_sec);
+        elapsed[i] += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+    }
+
     // Calculate result and put it here
-    if (mpi_size != 1) {
-        long double result = sum_array(current, dimension, mpi_size, mpi_rank);
-        if (mpi_rank == 0)
-            printf("%Lf,", result);
-    } else {
-        printf("%Lf\n", sum_array(current, dimension, mpi_size, mpi_rank));
+    long double result = sum_array(current, dimension, mpi_size, mpi_rank);
+
+    // Print everything in CSV format
+    if (mpi_rank == 0) {
+
+        // Calculate mean and standard div
+        struct mean_std_div mstd = standard_deviation(elapsed, reps);
+        // Dimension, Processors, Precision, Result, Last Time, Mean, Standard
+        // deviation
+        printf("%d, %d, %f, %Lf, %f, %f, %f\n", dimension, mpi_size, precision,
+               result, elapsed[reps - 1], mstd.mean, mstd.std_div);
     }
 
     // Finalizes MPI and after this resources can be freed
